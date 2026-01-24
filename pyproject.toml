@@ -1,0 +1,125 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lalo-tts"
+version = "0.1.0"
+description = "EPUB to audiobook converter using Qwen3-TTS"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+requires-python = ">=3.12"
+authors = [
+    {name = "Willian Paixao", email = "willian@ufpa.br"}
+]
+keywords = ["epub", "tts", "audiobook", "qwen", "text-to-speech"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Environment :: Console",
+    "Environment :: GPU :: NVIDIA CUDA",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Multimedia :: Sound/Audio :: Conversion",
+    "Topic :: Text Processing",
+    "Topic :: Utilities",
+]
+
+dependencies = [
+    "qwen-tts>=0.0.5",
+    "ebooklib>=0.18",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=4.9.0",
+    "soundfile>=0.12.1",
+    "pydub>=0.25.1",
+    "click>=8.1.0",
+    "rich>=13.0.0",
+    "langdetect>=1.0.9",
+    "torch>=2.0.0,<3.0.0",
+    "mutagen>=1.47.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.8.0",
+    "mypy>=1.0.0",
+    "pyright>=1.1.390",
+    "pre-commit>=4.0.0",
+]
+
+[project.scripts]
+lalo = "lalo.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/willianpaixao/lalo"
+Documentation = "https://github.com/willianpaixao/lalo#readme"
+Repository = "https://github.com/willianpaixao/lalo"
+"Bug Tracker" = "https://github.com/willianpaixao/lalo/issues"
+Changelog = "https://github.com/willianpaixao/lalo/releases"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["lalo*"]
+exclude = ["tests*", "examples*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+ignore = [
+    "E402",    # module-import-not-at-top-of-file
+    "T201",    # print found (we use print in CLI)
+    "PLR0913", # too many arguments
+    "PLR2004", # magic value comparison
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "PLR2004", "ARG"]  # Allow assert, magic values, unused args in tests
+
+[tool.ruff.format]
+# Use double quotes for strings
+quote-style = "double"
+# Indent with spaces
+indent-style = "space"
+# Respect magic trailing comma
+skip-magic-trailing-comma = false
+# Auto-detect line ending
+line-ending = "auto"
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+
+# Suppress warnings for untyped third-party libraries
+disable_error_code = ["import-untyped"]
+
+[tool.pyright]
+include = ["lalo", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --cov=lalo --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["lalo"]
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
