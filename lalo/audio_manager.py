@@ -13,6 +13,7 @@ from lalo.config import AUDIO_SAMPLE_RATE, M4B_BITRATE, MP3_BITRATE, SUPPORTED_F
 from lalo.exceptions import (
     AudioExportError,
     EmptyAudioError,
+    FFmpegNotFoundError,
     UnsupportedAudioFormatError,
 )
 
@@ -198,9 +199,12 @@ class AudioManager:
 
         # Export to temporary M4A without chapters first
         temp_m4a_no_chapters = output_path.with_suffix(".temp.m4a")
-        combined_audio.export(
-            str(temp_m4a_no_chapters), format="ipod", bitrate=bitrate, parameters=["-vn"]
-        )
+        try:
+            combined_audio.export(
+                str(temp_m4a_no_chapters), format="ipod", bitrate=bitrate, parameters=["-vn"]
+            )
+        except FileNotFoundError:
+            raise FFmpegNotFoundError() from None
 
         # Use ffmpeg to add chapters and create final M4B
         final_path = output_path.with_suffix(".m4b")
@@ -222,7 +226,13 @@ class AudioManager:
             str(final_path),
         ]
 
-        subprocess.run(ffmpeg_cmd, check=True, capture_output=True)
+        try:
+            subprocess.run(ffmpeg_cmd, check=True, capture_output=True)
+        except FileNotFoundError:
+            raise FFmpegNotFoundError() from None
+        except subprocess.CalledProcessError as e:
+            error_msg = e.stderr.decode("utf-8", errors="replace") if e.stderr else str(e)
+            raise AudioExportError("m4b", str(output_path), Exception(error_msg)) from e
 
         # Cleanup temp files
         temp_m4a_no_chapters.unlink()
@@ -445,12 +455,15 @@ class StreamingAudioWriter:
 
         # Export to temporary M4A without chapters
         temp_m4a = self.temp_dir / "temp.m4a"
-        combined_audio.export(
-            str(temp_m4a),
-            format="ipod",
-            bitrate=self.bitrate,
-            parameters=["-vn"],
-        )
+        try:
+            combined_audio.export(
+                str(temp_m4a),
+                format="ipod",
+                bitrate=self.bitrate,
+                parameters=["-vn"],
+            )
+        except FileNotFoundError:
+            raise FFmpegNotFoundError() from None
 
         # Use ffmpeg to add chapter metadata
         import subprocess
@@ -471,8 +484,10 @@ class StreamingAudioWriter:
 
         try:
             subprocess.run(ffmpeg_cmd, check=True, capture_output=True)
+        except FileNotFoundError:
+            raise FFmpegNotFoundError() from None
         except subprocess.CalledProcessError as e:
-            error_msg = e.stderr.decode() if e.stderr else str(e)
+            error_msg = e.stderr.decode("utf-8", errors="replace") if e.stderr else str(e)
             raise AudioExportError("m4b", str(self.output_path), Exception(error_msg)) from e
 
     def cleanup(self) -> None:

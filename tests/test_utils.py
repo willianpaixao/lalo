@@ -2,14 +2,18 @@
 Tests for utils module.
 """
 
+import tempfile
+from pathlib import Path
+
 import pytest
 
-from lalo.exceptions import InvalidChapterSelectionError
+from lalo.exceptions import InvalidChapterSelectionError, InvalidFilePathError
 from lalo.utils import (
     detect_language,
     format_duration,
     parse_chapter_selection,
     sanitize_filename,
+    validate_file_exists,
 )
 
 
@@ -27,6 +31,22 @@ class TestLanguageDetection:
     def test_empty_text_defaults_to_english(self):
         assert detect_language("") == "English"
         assert detect_language("   ") == "English"
+
+    def test_unsupported_language_defaults_to_english(self, monkeypatch):
+        """Test that unsupported languages default to English."""
+        # Mock langdetect to return an unsupported language code
+        # "fi" (Finnish) is not in LANGUAGE_MAP, so should fallback to English
+        monkeypatch.setattr("lalo.utils.langdetect.detect", lambda text: "fi")
+
+        text = "Some text"
+        result = detect_language(text)
+        assert result == "English"
+
+    def test_detection_error_defaults_to_english(self):
+        """Test that detection errors default to English."""
+        # Very short text might cause detection to fail
+        result = detect_language("a")
+        assert result == "English"
 
 
 class TestChapterSelection:
@@ -63,6 +83,27 @@ class TestChapterSelection:
     def test_invalid_format_raises_error(self):
         with pytest.raises(InvalidChapterSelectionError, match="Invalid chapter number"):
             parse_chapter_selection("abc", 10)
+
+    def test_range_start_out_of_bounds(self):
+        """Test that range with start out of bounds raises error."""
+        with pytest.raises(InvalidChapterSelectionError, match="out of bounds"):
+            parse_chapter_selection("0-5", 10)
+
+    def test_range_end_out_of_bounds(self):
+        """Test that range with end out of bounds raises error."""
+        with pytest.raises(InvalidChapterSelectionError, match="out of bounds"):
+            parse_chapter_selection("5-15", 10)
+
+    def test_invalid_range_format(self):
+        """Test that invalid range format raises error."""
+        with pytest.raises(InvalidChapterSelectionError, match="Invalid range format"):
+            parse_chapter_selection("1-abc", 10)
+
+    def test_negative_chapter_number(self):
+        """Test that negative chapter number raises error."""
+        # Negative numbers are parsed as ranges and raise format error
+        with pytest.raises(InvalidChapterSelectionError):
+            parse_chapter_selection("-1", 10)
 
 
 class TestDurationFormatting:
@@ -107,3 +148,30 @@ class TestFilenameSanitization:
         long_name = "a" * 300
         result = sanitize_filename(long_name)
         assert len(result) <= 255
+
+
+class TestValidateFileExists:
+    """Tests for file validation."""
+
+    def test_valid_file_exists(self):
+        """Test that valid file passes validation."""
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            temp_file = Path(f.name)
+
+        try:
+            result = validate_file_exists(str(temp_file))
+            assert result == temp_file
+            assert result.exists()
+        finally:
+            temp_file.unlink()
+
+    def test_nonexistent_file_raises_error(self):
+        """Test that nonexistent file raises error."""
+        with pytest.raises(InvalidFilePathError, match="File not found"):
+            validate_file_exists("/nonexistent/path/file.txt")
+
+    def test_directory_raises_error(self):
+        """Test that directory path raises error."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with pytest.raises(InvalidFilePathError, match="Path is not a file"):
+                validate_file_exists(tmpdir)
