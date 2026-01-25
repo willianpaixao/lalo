@@ -28,6 +28,7 @@ from lalo.config import (
 from lalo.exceptions import (
     GPUNotAvailableError,
     TTSError,
+    TTSModelLoadError,
     UnsupportedLanguageError,
     UnsupportedSpeakerError,
 )
@@ -82,6 +83,9 @@ class TTSEngine:
 
         Returns:
             Loaded Qwen3TTSModel instance
+
+        Raises:
+            TTSModelLoadError: If model loading fails
         """
         # Convert dtype string to torch dtype
         dtype_map = {
@@ -101,8 +105,11 @@ class TTSEngine:
         if self.use_flash_attention and self.dtype in ["bfloat16", "float16"]:
             model_kwargs["attn_implementation"] = "flash_attention_2"
 
-        # Load model
-        model = Qwen3TTSModel.from_pretrained(self.model_name, **model_kwargs)
+        # Load model with error handling
+        try:
+            model = Qwen3TTSModel.from_pretrained(self.model_name, **model_kwargs)
+        except Exception as e:
+            raise TTSModelLoadError(self.model_name, e) from e
 
         return model
 

@@ -107,13 +107,11 @@ GENERATION_CONFIG: dict[str, Any] = {
 # Optimal chunk size for Qwen3-TTS based on model architecture
 # - Qwen3 context: 2000-8000 tokens (~4 chars/token)
 # - Safe range: 1500-4000 characters
-# - Default 2000: 4x fewer chunks than previous 500, ~2-3x speedup
 TTS_CHUNK_SIZE: int = 2000  # characters per chunk
 
 # GPU Batch Processing Settings
 # Process multiple chunks simultaneously for better GPU utilization
-# - Batch size 4: Good for 8-16GB VRAM (RTX 3080/3090)
 # - Batch size 8: Good for 24GB+ VRAM (RTX 3090/4090)
+# - Batch size 4: Good for 8-16GB VRAM (RTX 3080/3090)
 # - Batch size 2: Conservative for 6-8GB VRAM
-# Expected speedup: 1.5-2x on top of chunk optimization
 TTS_BATCH_SIZE: int = 4  # chunks processed in parallel
