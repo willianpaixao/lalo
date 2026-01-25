@@ -113,7 +113,8 @@ class TTSEngine:
 
         return model
 
-    def _chunk_text(self, text: str, max_chars: int = TTS_CHUNK_SIZE) -> list[str]:
+    @staticmethod
+    def _chunk_text(text: str, max_chars: int = TTS_CHUNK_SIZE) -> list[str]:
         """
         Split text into chunks for processing.
 
@@ -274,6 +275,7 @@ class TTSEngine:
         if len(audio_segments) == 1:
             full_audio = audio_segments[0]
         else:
+            # Validate segments first
             valid_segments = []
             for i, seg in enumerate(audio_segments):
                 if not isinstance(seg, np.ndarray):
@@ -289,7 +291,23 @@ class TTSEngine:
                     seg = seg.flatten()
                 valid_segments.append(seg)
 
-            full_audio = np.concatenate(valid_segments)
+            # Ensure we have valid segments
+            if not valid_segments:
+                raise TTSError("No valid audio segments to concatenate")
+
+            # Determine a common dtype that can represent all segments safely
+            common_dtype = np.result_type(*(seg.dtype for seg in valid_segments))
+
+            # Pre-allocate buffer for efficiency
+            total_length = sum(len(seg) for seg in valid_segments)
+            full_audio = np.empty(total_length, dtype=common_dtype)
+
+            # Copy segments in place (no intermediate allocations)
+            pos = 0
+            for seg in valid_segments:
+                seg_len = len(seg)
+                full_audio[pos : pos + seg_len] = seg
+                pos += seg_len
 
         return full_audio, sr
 

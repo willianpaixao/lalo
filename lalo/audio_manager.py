@@ -49,7 +49,25 @@ class AudioManager:
         if len(audio_segments) == 1:
             return audio_segments[0]
 
-        return np.concatenate(audio_segments)
+        # Determine a common dtype that can represent all segments without loss
+        dtypes = [seg.dtype for seg in audio_segments]
+        if all(dt == dtypes[0] for dt in dtypes):
+            buffer_dtype = dtypes[0]
+        else:
+            buffer_dtype = np.result_type(*dtypes)
+
+        # Pre-allocate buffer for efficiency
+        total_length = sum(len(seg) for seg in audio_segments)
+        full_audio = np.empty(total_length, dtype=buffer_dtype)
+
+        # Copy segments in place (NumPy will cast to buffer_dtype as needed)
+        pos = 0
+        for seg in audio_segments:
+            seg_len = len(seg)
+            full_audio[pos : pos + seg_len] = seg
+            pos += seg_len
+
+        return full_audio
 
     def export_wav(
         self,

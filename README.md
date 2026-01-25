@@ -66,7 +66,7 @@ This will:
 - Auto-detect the language
 - Use the default speaker (Aiden - American English male)
 - Convert all chapters
-- Output to `<book_title>.mp3`
+- Output to `mybook.mp3` (input filename with .mp3 extension)
 
 ### Advanced Examples
 
