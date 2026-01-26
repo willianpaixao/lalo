@@ -115,3 +115,12 @@ TTS_CHUNK_SIZE: int = 2000  # characters per chunk
 # - Batch size 4: Good for 8-16GB VRAM (RTX 3080/3090)
 # - Batch size 2: Conservative for 6-8GB VRAM
 TTS_BATCH_SIZE: int = 4  # chunks processed in parallel
+
+# Parallel Chapter Processing Settings
+# Process multiple chapters simultaneously across GPUs
+PARALLEL_PROCESSING_ENABLED: bool = True  # Enable auto-detection and parallel processing
+MAX_PARALLEL_CHAPTERS: int | None = None  # Auto-detect based on available GPUs (None = auto)
+PARALLEL_DEVICES: list[str] | None = None  # Auto-detect GPUs (None = auto, or ["cuda:0", "cuda:1"])
+MODEL_VRAM_MB: int = 4000  # Estimated VRAM per model instance in MB
+PARALLEL_SAFETY_FACTOR: float = 0.8  # Use 80% of available VRAM (conservative)
+PARALLEL_MIN_CHAPTERS: int = 2  # Minimum chapters to use parallel processing
