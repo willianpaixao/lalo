@@ -1,0 +1,2 @@
+# EPUB files are binary and should not be diffed
+*.epub binary -diff

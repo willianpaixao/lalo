@@ -498,3 +498,26 @@ Default settings can be customized in `lalo/config.py`:
 ## Contributing
 
 Contributions are welcome! Please feel free to submit pull requests or open issues.
+
+### Development Setup
+
+```bash
+# Clone repository
+git clone https://github.com/willianpaixao/lalo.git
+cd lalo
+
+# Install development dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest tests/ -v
+
+# Run linting
+ruff check --fix
+ruff format
+
+# Run type checking
+mypy lalo/
+```
+
+See [Testing Guide](docs/TESTING.md) for comprehensive testing instructions.
