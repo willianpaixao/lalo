@@ -110,6 +110,12 @@ include = ["lalo", "tests"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --cov=lalo --cov-report=term-missing"
+markers = [
+    "gpu: mark test as requiring GPU (skip in CI)",
+    "slow: mark test as slow (>30 seconds)",
+    "e2e: mark test as end-to-end integration test",
+    "extended: mark test as requiring --extended flag (disabled by default for faster runs)",
+]
 
 [tool.coverage.run]
 source = ["lalo"]

@@ -84,7 +84,8 @@ jobs:
 
       - name: Run tests with pytest
         run: |
-          pytest tests/ -v --cov=lalo --cov-report=xml --cov-report=term-missing
+          # Exclude E2E tests (require GPU)
+          pytest tests/ -v --cov=lalo --cov-report=xml --cov-report=term-missing --ignore=tests/e2e -m "not gpu"
 
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.12' && matrix.os == 'ubuntu-latest'
