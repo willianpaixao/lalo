@@ -734,5 +734,53 @@ def languages(list_languages: bool):
     console.print(table)
 
 
+@main.command()
+@click.argument("epub_file", type=click.Path(exists=True))
+def inspect(epub_file: str):
+    """
+    Inspect an EPUB file and list all chapters.
+
+    Shows chapter number and title for each chapter.
+
+    Examples:
+
+        lalo inspect mybook.epub
+    """
+    try:
+        # Parse EPUB
+        console.print(f"\n[cyan]Inspecting EPUB:[/cyan] {epub_file}")
+        book = parse_epub(epub_file)
+
+        console.print(f"[green]✓[/green] {book.title} by {book.author}")
+        console.print(f"[green]✓[/green] Total chapters: {len(book.chapters)}\n")
+
+        # Create table for chapters without frame
+        table = Table(show_header=True, show_edge=False, show_lines=False, box=None)
+        table.add_column("Chapter", style="cyan", no_wrap=True)
+        table.add_column("Title", style="white")
+
+        for chapter in book.chapters:
+            table.add_row(
+                str(chapter.number),
+                chapter.title,
+            )
+
+        console.print(table)
+
+    except click.Abort:
+        raise
+    except EPUBError as e:
+        console.print(f"\n[red]EPUB Error:[/red] {e}")
+        console.print(f"[yellow]File:[/yellow] {epub_file}")
+        console.print("[yellow]Hint:[/yellow] Ensure the file is a valid EPUB format")
+        raise click.Abort() from e
+    except Exception as e:
+        console.print(f"\n[red]Unexpected error:[/red] {e}")
+        console.print(
+            "[yellow]This is a bug![/yellow] Please report it at https://github.com/willianpaixao/lalo/issues"
+        )
+        raise click.Abort() from e
+
+
 if __name__ == "__main__":
     main()

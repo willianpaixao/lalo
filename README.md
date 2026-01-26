@@ -433,6 +433,24 @@ Options:
   --help                    Show this message and exit
 ```
 
+### `lalo inspect`
+
+Inspect an EPUB file and list all chapters.
+
+```
+Usage: lalo inspect [OPTIONS] EPUB_FILE
+
+Options:
+  --help  Show this message and exit
+```
+
+Example:
+```bash
+lalo inspect mybook.epub
+```
+
+This displays the book's metadata (title and author) and a list of all chapters with their numbers and titles. Useful for previewing a book's structure before conversion or for selecting specific chapters to convert.
+
 ### `lalo speakers`
 
 Show information about available speakers.
