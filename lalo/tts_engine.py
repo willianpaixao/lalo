@@ -336,3 +336,37 @@ class TTSEngine:
             raise ValueError(f"Speaker '{speaker}' not found")
 
         return SPEAKER_INFO[speaker]
+
+    def clear_cache(self) -> None:
+        """
+        Clear CUDA GPU cache to free device memory.
+
+        Call this after processing large amounts of text to help reduce
+        GPU memory accumulation and fragmentation when using CUDA.
+
+        This is a best-effort operation: failures are logged but not raised
+        to prevent interrupting normal operation. Model weights and other
+        in-memory state are not modified.
+        """
+        # Guard against CPU-only PyTorch builds
+        # The try/except wrapper ensures we don't crash even if CUDA APIs fail
+        try:
+            # Normalize self.device to a torch.device
+            if isinstance(self.device, torch.device):
+                device = self.device
+            else:
+                device = torch.device(self.device)
+
+            # Only proceed if CUDA is actually available
+            if device.type == "cuda" and torch.cuda.is_available():
+                # Clear CUDA cache
+                torch.cuda.empty_cache()
+
+                # Synchronize to ensure all operations are complete
+                # device.index might be None for "cuda" without explicit number
+                device_idx = device.index if device.index is not None else 0
+                torch.cuda.synchronize(device_idx)  # type: ignore[arg-type]
+        except Exception as e:
+            # Log warning but don't raise - cache clearing is best-effort
+            logger = logging.getLogger(__name__)
+            logger.debug(f"Failed to clear CUDA cache: {e}")
