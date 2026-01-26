@@ -162,33 +162,99 @@ class ChapterWorker:
 
         Returns:
             Tuple of (audio_array, sample_rate)
+
+        Note:
+            This method is serialized per worker using self.lock to prevent
+            concurrent access to the same model/GPU, which would cause
+            race conditions during generation and cache clearing.
         """
-        # Lazy load model
+        # Lazy load model before acquiring lock to avoid deadlock
         self._load_model()
 
-        logger.debug(
-            f"Worker {self.worker_id}: Processing chapter {chapter.number} on {self.device}"
-        )
-
-        # Ensure model is loaded
-        if self.tts_engine is None:
-            raise RuntimeError(f"Worker {self.worker_id}: TTS engine not loaded")
-
-        try:
-            audio, sr = self.tts_engine.generate(
-                text=chapter.content,
-                language=language,
-                speaker=speaker,
-                instruct=instruct,
-                progress_callback=progress_callback,
-            )
+        # Serialize access per worker to prevent concurrent chapters
+        # on the same GPU from interfering with each other
+        with self.lock:
             logger.debug(
-                f"Worker {self.worker_id}: Chapter {chapter.number} complete ({len(audio)} samples)"
+                f"Worker {self.worker_id}: Processing chapter {chapter.number} on {self.device}"
             )
-            return audio, sr
-        except Exception as e:
-            logger.error(f"Worker {self.worker_id}: Error processing chapter {chapter.number}: {e}")
-            raise
+
+            # Ensure model is loaded
+            if self.tts_engine is None:
+                raise RuntimeError(f"Worker {self.worker_id}: TTS engine not loaded")
+
+            try:
+                # Log memory before processing (with proper guards)
+                if torch.cuda.is_available():
+                    try:
+                        # Normalize device string to handle both "cuda" and "cuda:N"
+                        device = torch.device(self.device)
+                        if device.type == "cuda":
+                            device_idx = device.index if device.index is not None else 0
+                            # Validate device index is within range
+                            if device_idx < torch.cuda.device_count():
+                                allocated_mb = torch.cuda.memory_allocated(device_idx) / (
+                                    1024 * 1024
+                                )
+                                reserved_mb = torch.cuda.memory_reserved(device_idx) / (1024 * 1024)
+                                logger.debug(
+                                    f"Worker {self.worker_id}: GPU memory before chapter {chapter.number}: "
+                                    f"allocated={allocated_mb:.0f}MB, reserved={reserved_mb:.0f}MB"
+                                )
+                    except Exception as mem_error:
+                        logger.debug(
+                            f"Worker {self.worker_id}: Failed to log GPU memory: {mem_error}"
+                        )
+
+                audio, sr = self.tts_engine.generate(
+                    text=chapter.content,
+                    language=language,
+                    speaker=speaker,
+                    instruct=instruct,
+                    progress_callback=progress_callback,
+                )
+                logger.debug(
+                    f"Worker {self.worker_id}: Chapter {chapter.number} complete ({len(audio)} samples)"
+                )
+                return audio, sr
+            except Exception as e:
+                logger.error(
+                    f"Worker {self.worker_id}: Error processing chapter {chapter.number}: {e}"
+                )
+                raise
+            finally:
+                # Aggressive memory cleanup after each chapter
+                # Wrap in try/except to preserve original exception if cleanup fails
+                try:
+                    if self.tts_engine:
+                        self.tts_engine.clear_cache()
+
+                    # Log memory after cleanup (with proper guards)
+                    if torch.cuda.is_available():
+                        try:
+                            # Normalize device string to handle both "cuda" and "cuda:N"
+                            device = torch.device(self.device)
+                            if device.type == "cuda":
+                                device_idx = device.index if device.index is not None else 0
+                                # Validate device index is within range
+                                if device_idx < torch.cuda.device_count():
+                                    allocated_mb = torch.cuda.memory_allocated(device_idx) / (
+                                        1024 * 1024
+                                    )
+                                    reserved_mb = torch.cuda.memory_reserved(device_idx) / (
+                                        1024 * 1024
+                                    )
+                                    logger.debug(
+                                        f"Worker {self.worker_id}: GPU memory after cleanup: "
+                                        f"allocated={allocated_mb:.0f}MB, reserved={reserved_mb:.0f}MB"
+                                    )
+                        except Exception as mem_error:
+                            logger.debug(
+                                f"Worker {self.worker_id}: Failed to log GPU memory: {mem_error}"
+                            )
+                except Exception as cleanup_error:
+                    logger.warning(
+                        f"Worker {self.worker_id}: Failed to clean up GPU memory: {cleanup_error}"
+                    )
 
     def cleanup(self) -> None:
         """Clean up worker resources."""
@@ -402,9 +468,24 @@ class ParallelChapterProcessor:
                         logger.debug(f"Chapter {idx} completed")
                     except Exception as e:
                         logger.error(f"Chapter {idx} failed: {e}")
-                        raise TTSError(f"Parallel processing failed for chapter {idx}: {e}")
+                        # Create error with partial results attached for CLI to save
+                        error = TTSError(f"Parallel processing failed for chapter {idx}: {e}")
+                        # Attach partial results (completed chapters only) to exception.
+                        # Only include the leading contiguous prefix so ordering/resume logic remains correct.
+                        partial_results: list[tuple[np.ndarray, int]] = []
+                        for r in results:
+                            if r is None:
+                                break
+                            partial_results.append(r)
+                        error.partial_results = partial_results  # type: ignore[attr-defined]
+                        raise error from e
 
-            # All results should be filled, cast to expected type
+            # Validate all results are filled (should always be true if we reach here)
+            # If any chapter failed, we would have raised TTSError above
+            if any(r is None for r in results):
+                raise TTSError("Internal error: Some chapters were not processed")
+
+            # Now we can safely cast
             return results  # type: ignore[return-value]
 
         finally:

@@ -10,6 +10,10 @@ import warnings
 from pathlib import Path
 from typing import Any
 
+# Configure PyTorch memory allocator BEFORE importing torch
+# This helps avoid "reserved but unallocated" memory issues
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 import click
 
 # Suppress transformers informational messages and progress bars
@@ -125,7 +129,7 @@ def main():
     default=None,
     help="Maximum parallel chapters (default: auto-detect based on available GPUs)",
 )
-def convert(
+def convert(  # pyright: ignore[reportGeneralTypeIssues]
     epub_file: str,
     speaker: str,
     language: str,
@@ -153,7 +157,7 @@ def convert(
         lalo convert mybook.epub --streaming  # Use streaming mode for large books
     """
     # Signal handling for graceful shutdown
-    interrupted = {"flag": False, "force_exit": False}
+    interrupted = {"flag": False, "force_exit": False, "reason": "user"}
 
     def signal_handler(_signum, _frame):
         """Handle Ctrl+C gracefully."""
@@ -311,7 +315,7 @@ def convert(
                     chapter = selected_chapters[idx]
                     # Estimate total chunks for this chapter (static method, no model loading)
                     chunks = TTSEngine._chunk_text(chapter.content)
-                    task: TaskID = progress.add_task(
+                    task: TaskID = progress.add_task(  # pyright: ignore[reportInvalidTypeForm]
                         f"[cyan]Ch {chapter.number}/{len(selected_chapters)}: {chapter.title[:35]}...",
                         total=len(chunks),
                     )
@@ -326,7 +330,7 @@ def convert(
                         if chapter_idx not in chapter_tasks:
                             chapter = selected_chapters[chapter_idx]
                             chunks = TTSEngine._chunk_text(chapter.content)
-                            task: TaskID = progress.add_task(
+                            task: TaskID = progress.add_task(  # pyright: ignore[reportInvalidTypeForm]
                                 f"[cyan]Ch {chapter.number}/{len(selected_chapters)}: {chapter.title[:35]}...",
                                 total=len(chunks),
                             )
@@ -400,12 +404,46 @@ def convert(
                                     )
 
                 except Exception as e:
-                    console.print(f"\n[yellow]Warning:[/yellow] Parallel processing failed: {e}")
-                    console.print("[yellow]Falling back to sequential processing[/yellow]")
-                    use_parallel = False
-                    # Reset for sequential processing
-                    audio_segments = []
-                    chapters_completed = 0
+                    # Check if it's a CUDA OOM error - save progress if we have completed chapters
+                    is_oom_error = "CUDA out of memory" in str(e) or "OutOfMemoryError" in str(
+                        type(e).__name__
+                    )
+
+                    # Check if exception has partial results attached
+                    partial_results = getattr(e, "partial_results", None)
+
+                    if is_oom_error and partial_results:
+                        # Process partial results that completed before OOM
+                        console.print(
+                            "\n[red]CUDA Out of Memory Error:[/red] GPU ran out of memory during processing"
+                        )
+                        console.print(
+                            f"[yellow]⚠ Saving {len(partial_results)} completed chapter(s) before exit...[/yellow]"
+                        )
+
+                        # Process the completed chapters
+                        for idx, (audio, sr) in enumerate(partial_results):
+                            chapter = selected_chapters[idx]
+                            if streaming_writer:
+                                chapter_title = f"Chapter {chapter.number}: {chapter.title}"
+                                streaming_writer.write_chapter(audio, chapter_title, chapter.number)
+                            else:
+                                audio_segments.append(audio)
+                            chapters_completed += 1
+
+                        # Trigger save by setting interrupted flag and record OOM as the reason
+                        interrupted["flag"] = True
+                        interrupted["reason"] = "oom"
+                        # Continue to the interruption handler below which will save progress
+                    else:
+                        console.print(
+                            f"\n[yellow]Warning:[/yellow] Parallel processing failed: {e}"
+                        )
+                        console.print("[yellow]Falling back to sequential processing[/yellow]")
+                        use_parallel = False
+                        # Reset for sequential processing
+                        audio_segments = []
+                        chapters_completed = 0
 
             # Sequential processing branch (original code or fallback)
             if not use_parallel:
@@ -475,9 +513,50 @@ def convert(
                         )
                         raise click.Abort() from e
                     except TTSError as e:
-                        console.print(f"\n[red]TTS Error in chapter {chapter.number}:[/red] {e}")
-                        console.print(f"[yellow]Chapter:[/yellow] {chapter.title}")
-                        raise click.Abort() from e
+                        # Check if it's a CUDA OOM error
+                        is_oom_error = "CUDA out of memory" in str(e) or "OutOfMemoryError" in str(
+                            type(e).__name__
+                        )
+
+                        if is_oom_error and chapters_completed > 0:
+                            console.print(
+                                f"\n[red]CUDA Out of Memory Error:[/red] GPU ran out of memory during chapter {chapter.number}"
+                            )
+                            console.print(
+                                f"[yellow]⚠ Saving {chapters_completed} completed chapter(s) before exit...[/yellow]"
+                            )
+                            # Trigger save by setting interrupted flag and record OOM as the reason
+                            interrupted["flag"] = True
+                            interrupted["reason"] = "oom"
+                            # Break to save progress
+                            break
+                        else:
+                            console.print(
+                                f"\n[red]TTS Error in chapter {chapter.number}:[/red] {e}"
+                            )
+                            console.print(f"[yellow]Chapter:[/yellow] {chapter.title}")
+                            raise click.Abort() from e
+                    except RuntimeError as e:
+                        # Handle CUDA OOM raised directly as RuntimeError / torch.cuda.OutOfMemoryError
+                        is_oom_error = "CUDA out of memory" in str(e) or "OutOfMemoryError" in str(
+                            type(e).__name__
+                        )
+
+                        if is_oom_error and chapters_completed > 0:
+                            console.print(
+                                f"\n[red]CUDA Out of Memory Error:[/red] GPU ran out of memory during chapter {chapter.number}"
+                            )
+                            console.print(
+                                f"[yellow]⚠ Saving {chapters_completed} completed chapter(s) before exit...[/yellow]"
+                            )
+                            # Trigger save by setting interrupted flag and record OOM as the reason
+                            interrupted["flag"] = True
+                            interrupted["reason"] = "oom"
+                            # Break to save progress
+                            break
+                        else:
+                            # Re-raise non-OOM runtime errors to be handled by outer logic
+                            raise
                     except AudioError as e:
                         console.print(f"\n[red]Audio Error in chapter {chapter.number}:[/red] {e}")
                         console.print(f"[yellow]Chapter:[/yellow] {chapter.title}")
@@ -569,8 +648,12 @@ def convert(
                         sample_rate=sr,
                     )
 
-            # Show summary
-            console.print("\n[yellow]⚠ Conversion interrupted by user[/yellow]")
+            # Show summary with context-specific message
+            if interrupted.get("reason") == "oom":
+                console.print("\n[yellow]⚠ Conversion stopped due to GPU out of memory[/yellow]")
+            else:
+                console.print("\n[yellow]⚠ Conversion interrupted by user[/yellow]")
+
             console.print(f"[cyan]Partial output:[/cyan] {output_file}")
             console.print(
                 f"[cyan]Chapters saved:[/cyan] {chapters_completed} of {len(selected_chapters)}"
@@ -675,6 +758,22 @@ def convert(
     except LaloError as e:
         # Catch any other custom Lalo exceptions
         console.print(f"\n[red]Error:[/red] {e}")
+        raise click.Abort() from e
+    except RuntimeError as e:
+        # Catch CUDA OOM and other runtime errors
+        is_oom_error = "CUDA out of memory" in str(e) or "out of memory" in str(e).lower()
+
+        if is_oom_error:
+            console.print(f"\n[red]CUDA Out of Memory Error:[/red] {e}")
+            console.print(
+                "\n[yellow]Recommendations:[/yellow]\n"
+                "  1. Use --streaming mode to save memory: lalo convert <file> --streaming\n"
+                "  2. Process fewer chapters at once: --chapters 1-10\n"
+                "  3. Disable parallel processing: --no-parallel\n"
+                "  4. Reduce batch size in config.py: TTS_BATCH_SIZE = 1"
+            )
+        else:
+            console.print(f"\n[red]Runtime Error:[/red] {e}")
         raise click.Abort() from e
     except Exception as e:
         console.print(f"\n[red]Unexpected error:[/red] {e}")

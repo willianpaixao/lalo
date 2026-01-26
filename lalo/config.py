@@ -111,10 +111,11 @@ TTS_CHUNK_SIZE: int = 2000  # characters per chunk
 
 # GPU Batch Processing Settings
 # Process multiple chunks simultaneously for better GPU utilization
-# - Batch size 8: Good for 24GB+ VRAM (RTX 3090/4090)
-# - Batch size 4: Good for 8-16GB VRAM (RTX 3080/3090)
-# - Batch size 2: Conservative for 6-8GB VRAM
-TTS_BATCH_SIZE: int = 4  # chunks processed in parallel
+# - Batch size 8: Good for 24GB+ VRAM
+# - Batch size 4: Good for 16-24GB VRAM
+# - Batch size 2: Conservative for 8-12GB VRAM (default for parallel processing)
+# - Batch size 1: Safest for <8GB VRAM or when using parallel chapter processing
+TTS_BATCH_SIZE: int = 2  # chunks processed in parallel
 
 # Parallel Chapter Processing Settings
 # Process multiple chapters simultaneously across GPUs
