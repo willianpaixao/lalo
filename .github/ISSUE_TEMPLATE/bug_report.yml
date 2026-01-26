@@ -1,0 +1,153 @@
+name: 🐛 Bug Report
+description: Report a bug or unexpected behavior in Lalo
+title: "[Bug]: "
+labels: ["bug", "status: needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this bug! Please fill out the information below to help us reproduce and fix the issue.
+        
+        **Before submitting:**
+        - Search [existing issues](https://github.com/willianpaixao/lalo/issues) to avoid duplicates
+        - Update to the latest version (`pip install --upgrade lalo-tts`) to see if the bug still exists
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: I have searched existing issues and this is not a duplicate
+          required: true
+        - label: I am using the latest version of Lalo
+          required: true
+        - label: I have checked the [documentation](https://github.com/willianpaixao/lalo#readme)
+          required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: What went wrong?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Provide detailed steps to reproduce the issue
+      placeholder: |
+        1. Run command: lalo convert mybook.epub --speaker Aiden
+        2. Wait for processing to start
+        3. See error message: ...
+      value: |
+        1. 
+        2. 
+        3. 
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+      placeholder: The EPUB should be converted to audiobook without errors
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened? Include the full error message and traceback if applicable.
+      placeholder: |
+        ```
+        Paste error messages, tracebacks, or unexpected output here
+        ```
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment Information
+      description: |
+        Please provide details about your environment. You can get some of this information by running:
+        ```bash
+        python --version
+        pip show lalo-tts
+        nvidia-smi  # if you have NVIDIA GPU
+        ```
+      value: |
+        - **OS**: (e.g., Ubuntu 22.04, Windows 11, macOS 14)
+        - **Python version**: (e.g., 3.12.1)
+        - **Lalo version**: (e.g., 0.1.0)
+        - **GPU**: (e.g., NVIDIA RTX 3090, or "N/A" if CPU only)
+        - **CUDA version**: (e.g., 12.1, or "N/A")
+        - **Installation method**: (e.g., pip install lalo-tts, or from source)
+      render: markdown
+    validations:
+      required: true
+
+  - type: textarea
+    id: epub-info
+    attributes:
+      label: EPUB File Information (if applicable)
+      description: |
+        If the bug is related to a specific EPUB file, please provide:
+        - File size
+        - Number of chapters
+        - Language
+        - Any special formatting or features
+        
+        **Note:** Do not upload copyrighted EPUB files. If possible, provide a link to a public domain or Creative Commons book that reproduces the issue.
+      placeholder: |
+        - File size: 2.5 MB
+        - Chapters: 15
+        - Language: English
+        - Special notes: Contains images, tables, footnotes, etc.
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs or Output
+      description: |
+        If applicable, paste any relevant logs or command output. 
+        This will be automatically formatted as code.
+      placeholder: Paste logs here...
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: |
+        Add any other context about the problem here.
+        - Does the issue happen consistently or intermittently?
+        - Did this work in a previous version?
+        - Any workarounds you've found?
+      placeholder: Any additional information that might help...
+    validations:
+      required: false
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: How severe is this bug?
+      options:
+        - Critical - Application crashes or data loss
+        - High - Major functionality broken
+        - Medium - Feature works but with issues
+        - Low - Minor inconvenience or cosmetic issue
+      default: 2
+    validations:
+      required: true

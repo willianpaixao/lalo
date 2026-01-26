@@ -1,0 +1,140 @@
+name: ✨ Feature Request
+description: Suggest a new feature or enhancement for Lalo
+title: "[Feature]: "
+labels: ["feature", "status: needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature! We appreciate your input on making Lalo better.
+        
+        **Before submitting:**
+        - Search [existing issues](https://github.com/willianpaixao/lalo/issues) to see if this has been suggested
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: I have searched existing issues and discussions
+          required: true
+        - label: This feature would benefit multiple users, not just my specific use case
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem does this feature solve? What are you trying to accomplish?
+      placeholder: |
+        I'm always frustrated when...
+        OR
+        It would be helpful if Lalo could...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: How would you like this feature to work?
+      placeholder: |
+        Describe your ideal solution. Be as specific as possible about:
+        - User interface (CLI flags, options, etc.)
+        - Expected behavior
+        - Example usage
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: What alternative solutions or workarounds have you considered?
+      placeholder: |
+        - Alternative 1: ...
+        - Alternative 2: ...
+        - Current workaround: ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: Example Usage
+      description: Show how this feature would be used in practice
+      placeholder: |
+        ```bash
+        # Example command or code showing the new feature
+        lalo convert book.epub --new-feature value
+        ```
+      render: shell
+    validations:
+      required: false
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Which component does this relate to?
+      description: What part of Lalo would this feature affect?
+      options:
+        - CLI interface
+        - EPUB parsing
+        - TTS engine / voice quality
+        - Audio export / formats
+        - Performance / optimization
+        - Documentation
+        - Other (please specify in description)
+      multiple: true
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How important is this feature to you?
+      options:
+        - Critical - Blocking my use of Lalo
+        - High - Would significantly improve my workflow
+        - Medium - Nice to have
+        - Low - Small improvement
+      default: 2
+    validations:
+      required: true
+
+  - type: textarea
+    id: benefits
+    attributes:
+      label: Benefits
+      description: Who would benefit from this feature and how?
+      placeholder: |
+        - Users converting books in [specific language] would...
+        - People with large libraries would...
+        - Audiobook creators would...
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: |
+        Add any other context, screenshots, mockups, or references:
+        - Links to similar features in other tools
+        - Research or documentation supporting the feature
+        - Any implementation ideas or technical details
+      placeholder: Any additional information...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      description: Would you be willing to contribute to this feature?
+      options:
+        - label: I would be willing to implement this feature and submit a PR
+          required: false
+        - label: I would be willing to help test this feature
+          required: false
