@@ -1,0 +1,132 @@
+# GitHub Issue Labels Configuration
+# This file can be used with tools like github-label-sync to manage repository labels
+
+# Type Labels
+- name: bug
+  description: Something isn't working
+  color: d73a4a
+
+- name: feature
+  description: New feature request
+  color: a2eeef
+
+- name: enhancement
+  description: Improvement to existing feature
+  color: 84b6eb
+
+- name: documentation
+  description: Documentation improvements or issues
+  color: 0075ca
+
+- name: question
+  description: Questions about usage or functionality
+  color: d876e3
+
+# Priority Labels
+- name: "priority: critical"
+  description: Critical priority - security issues, data loss, crashes
+  color: b60205
+
+- name: "priority: high"
+  description: High priority - major bugs, important features
+  color: d93f0b
+
+- name: "priority: medium"
+  description: Medium priority - minor bugs, nice-to-have features
+  color: fbca04
+
+- name: "priority: low"
+  description: Low priority - cosmetic issues, future enhancements
+  color: c5def5
+
+# Status Labels
+- name: "status: needs-triage"
+  description: Needs review and labeling by maintainers
+  color: ededed
+
+- name: "status: ready"
+  description: Ready for development
+  color: 0e8a16
+
+- name: "status: in-progress"
+  description: Currently being worked on
+  color: fbca04
+
+- name: "status: blocked"
+  description: Blocked by other issues or external dependencies
+  color: d93f0b
+
+- name: "status: needs-info"
+  description: Waiting for more information from reporter
+  color: d876e3
+
+- name: "status: stale"
+  description: Inactive for extended period
+  color: e4e669
+
+- name: "status: wontfix"
+  description: This will not be worked on
+  color: ffffff
+
+- name: "status: duplicate"
+  description: Duplicate of existing issue
+  color: cfd3d7
+
+# Component Labels
+- name: "component: cli"
+  description: Command-line interface
+  color: 5319e7
+
+- name: "component: tts"
+  description: Text-to-speech engine
+  color: 5319e7
+
+- name: "component: epub"
+  description: EPUB parsing
+  color: 5319e7
+
+- name: "component: audio"
+  description: Audio processing and export
+  color: 5319e7
+
+- name: "component: testing"
+  description: Test suite and testing infrastructure
+  color: 5319e7
+
+- name: "component: ci-cd"
+  description: CI/CD pipeline and automation
+  color: 5319e7
+
+# Difficulty Labels
+- name: "good first issue"
+  description: Good for newcomers to the project
+  color: 7057ff
+
+- name: "help wanted"
+  description: Extra attention needed from community
+  color: 008672
+
+# Special Labels
+- name: "breaking-change"
+  description: Breaks backward compatibility
+  color: b60205
+
+- name: dependencies
+  description: Dependency updates or issues
+  color: 0366d6
+
+- name: performance
+  description: Performance improvements or issues
+  color: ff6347
+
+- name: security
+  description: Security-related issues
+  color: b60205
+
+- name: invalid
+  description: Invalid issue or not applicable
+  color: e4e669
+
+- name: "needs-reproduction"
+  description: Needs a reproducible test case
+  color: fef2c0
