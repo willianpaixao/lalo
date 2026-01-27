@@ -31,12 +31,29 @@ sudo apt-get install ffmpeg
 
 #### Option A: Install from PyPI (Recommended)
 
+Using pip:
 ```bash
 pip install lalo-tts
 ```
 
+Using uv (faster):
+```bash
+uv pip install lalo-tts
+```
+
 #### Option B: Install from Source (Development)
 
+Using uv (recommended):
+```bash
+# Clone the repository
+git clone https://github.com/willianpaixao/lalo.git
+cd lalo
+
+# Sync dependencies and install in development mode (including dev tools)
+uv sync --extra dev
+```
+
+Using pip:
 ```bash
 # Clone the repository
 git clone https://github.com/willianpaixao/lalo.git
@@ -475,6 +492,38 @@ Options:
   --help  Show this message and exit
 ```
 
+## Merging M4B Files
+
+If you converted a book in parts (e.g., chapters 1-10, 11-20, 21-30), you can merge them into a single M4B file while preserving all chapter markers:
+
+```bash
+./scripts/merge_m4b.sh complete_book.m4b part1.m4b part2.m4b part3.m4b
+```
+
+**Features**:
+- Preserves all chapter markers with correct timestamps
+- Uses first file's metadata as source of truth
+- Warns about metadata mismatches
+- Fast concatenation without re-encoding
+- Works with any M4B files (not just Lalo-generated)
+
+**Requirements**:
+- `jq` (for JSON processing): `sudo apt-get install jq` or `brew install jq`
+- `bc` (for precise duration arithmetic): `sudo apt-get install bc` or `brew install bc`
+- `realpath` (for resolving absolute file paths; usually part of `coreutils`): `sudo apt-get install coreutils` or `brew install coreutils`
+
+**Preview before merging**:
+```bash
+./scripts/merge_m4b.sh --dry-run output.m4b part1.m4b part2.m4b
+```
+
+**Options**:
+- `-v, --verbose` - Show detailed ffmpeg output
+- `-n, --dry-run` - Preview without actually merging
+- `-f, --force` - Overwrite output file if it exists
+- `-k, --keep-temp` - Keep temporary files for debugging
+- `-h, --help` - Show help message
+
 ## Configuration
 
 Default settings can be customized in `lalo/config.py`:
@@ -501,6 +550,27 @@ Contributions are welcome! Please feel free to submit pull requests or open issu
 
 ### Development Setup
 
+Using uv (recommended):
+```bash
+# Clone repository
+git clone https://github.com/willianpaixao/lalo.git
+cd lalo
+
+# Sync all dependencies (including dev extra)
+uv sync --extra dev
+
+# Run tests
+uv run pytest tests/ -v
+
+# Run linting
+uv run ruff check --fix
+uv run ruff format
+
+# Run type checking
+uv run mypy lalo/
+```
+
+Using pip:
 ```bash
 # Clone repository
 git clone https://github.com/willianpaixao/lalo.git

@@ -35,9 +35,9 @@ Fixes #(issue number)
 
 ### Test Configuration
 
-- **OS**: 
-- **Python version**: 
-- **GPU**: 
+- **OS**:
+- **Python version**:
+- **GPU**:
 
 ### Test Cases
 

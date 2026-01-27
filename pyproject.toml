@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "lalo-tts"
@@ -64,10 +64,8 @@ Repository = "https://github.com/willianpaixao/lalo"
 "Bug Tracker" = "https://github.com/willianpaixao/lalo/issues"
 Changelog = "https://github.com/willianpaixao/lalo/releases"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["lalo*"]
-exclude = ["tests*", "examples*"]
+[tool.hatch.build.targets.wheel]
+packages = ["lalo"]
 
 [tool.ruff]
 line-length = 100

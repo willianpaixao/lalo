@@ -12,16 +12,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-          cache: 'pip'
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          uv sync --frozen --all-extras
 
       - name: Run ruff check
         uses: astral-sh/ruff-action@v3
@@ -41,7 +44,7 @@ jobs:
       - name: Run tests
         run: |
           # Exclude E2E tests (require GPU)
-          pytest tests/ -v --cov=lalo --cov-report=term-missing --ignore=tests/e2e -m "not gpu"
+          uv run pytest tests/ -v --cov=lalo --cov-report=term-missing --ignore=tests/e2e -m "not gpu"
 
       - name: Comment coverage on PR
         if: github.event_name == 'pull_request'

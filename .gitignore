@@ -1,5 +1,7 @@
-.venv/
-__pycache__/
-lalo.egg-info/
 .mypy_cache/
 .ruff_cache/
+.venv/
+__pycache__/
+dist/
+lalo.egg-info/
+lalo_tts.egg-info/
