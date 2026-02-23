@@ -190,3 +190,31 @@ class InvalidFilePathError(ValidationError):
         self.file_path = file_path
         self.reason = reason
         super().__init__(f"Invalid file path '{file_path}': {reason}")
+
+
+# Checkpoint exceptions
+class CheckpointError(LaloError):
+    """Base exception for checkpoint/resume errors."""
+
+    pass
+
+
+class CheckpointCorruptedError(CheckpointError):
+    """Raised when a checkpoint file exists but is invalid or unreadable."""
+
+    def __init__(self, checkpoint_path: str, reason: str):
+        self.checkpoint_path = checkpoint_path
+        self.reason = reason
+        super().__init__(f"Corrupted checkpoint at '{checkpoint_path}': {reason}")
+
+
+class CheckpointMismatchError(CheckpointError):
+    """Raised when checkpoint does not match current EPUB or conversion settings."""
+
+    def __init__(self, field: str, expected: str, actual: str):
+        self.field = field
+        self.expected = expected
+        self.actual = actual
+        super().__init__(
+            f"Checkpoint mismatch on '{field}': checkpoint has '{expected}', current is '{actual}'"
+        )

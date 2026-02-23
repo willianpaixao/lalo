@@ -2,6 +2,7 @@
 Utility functions for Lalo.
 """
 
+import hashlib
 import re
 from pathlib import Path
 
@@ -184,3 +185,35 @@ def sanitize_filename(filename: str) -> str:
         filename = filename[:255]
 
     return filename or "untitled"
+
+
+def compute_file_hash(file_path: str | Path, algorithm: str = "sha256") -> str:
+    """
+    Compute a hex digest of a file using streaming reads.
+
+    Reads in 8 KB chunks so large files are handled without loading
+    the entire content into memory.
+
+    Args:
+        file_path: Path to the file to hash
+        algorithm: Hash algorithm name (default: "sha256")
+
+    Returns:
+        Hash string in the format "algorithm:hexdigest"
+
+    Raises:
+        FileNotFoundError: If file does not exist
+    """
+    path = Path(file_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Cannot hash file: {path}")
+
+    h = hashlib.new(algorithm)
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(8192)
+            if not chunk:
+                break
+            h.update(chunk)
+
+    return f"{algorithm}:{h.hexdigest()}"

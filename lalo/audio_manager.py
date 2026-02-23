@@ -329,6 +329,7 @@ class StreamingAudioWriter:
         format: str = "mp3",
         sample_rate: int = AUDIO_SAMPLE_RATE,
         bitrate: str = MP3_BITRATE,
+        cache_dir: str | Path | None = None,
     ):
         """
         Initialize streaming audio writer.
@@ -338,6 +339,11 @@ class StreamingAudioWriter:
             format: Audio format ('wav', 'mp3', 'm4b')
             sample_rate: Audio sample rate
             bitrate: Bitrate for compressed formats
+            cache_dir: Optional persistent directory for chapter WAV files.
+                When provided, the directory is **not** deleted on cleanup,
+                allowing checkpoint/resume to re-use cached audio across runs.
+                When ``None`` (default), a random temp directory is created
+                and deleted on cleanup (original behaviour).
         """
         self.output_path = Path(output_path)
         self.format = format.lower()
@@ -348,8 +354,15 @@ class StreamingAudioWriter:
         if self.format not in SUPPORTED_FORMATS:
             raise UnsupportedAudioFormatError(self.format, SUPPORTED_FORMATS)
 
-        # Create temp directory for chapter files
-        self.temp_dir = Path(tempfile.mkdtemp(prefix="lalo_"))
+        # Create or re-use directory for chapter files
+        if cache_dir is not None:
+            self.temp_dir = Path(cache_dir)
+            self.temp_dir.mkdir(parents=True, exist_ok=True)
+            self._external_cache = True
+        else:
+            self.temp_dir = Path(tempfile.mkdtemp(prefix="lalo_"))
+            self._external_cache = False
+
         self.chapter_files: list[Path] = []
         self.chapter_titles: list[str] = []
         self.total_duration = 0.0
@@ -508,11 +521,38 @@ class StreamingAudioWriter:
             error_msg = e.stderr.decode("utf-8", errors="replace") if e.stderr else str(e)
             raise AudioExportError("m4b", str(self.output_path), Exception(error_msg)) from e
 
+    def load_existing_chapters(
+        self,
+        chapter_files: list[Path],
+        chapter_titles: list[str],
+    ) -> None:
+        """
+        Load previously-written chapter files into the writer state.
+
+        Used when resuming from a checkpoint to restore completed chapters
+        so that ``finalize()`` includes them in the final output.
+
+        Args:
+            chapter_files: Ordered list of existing WAV file paths
+            chapter_titles: Corresponding chapter titles
+        """
+        for wav_path, title in zip(chapter_files, chapter_titles):
+            self.chapter_files.append(wav_path)
+            self.chapter_titles.append(title)
+            # Read duration from the WAV file
+            info = sf.info(str(wav_path))
+            self.total_duration += info.duration
+
     def cleanup(self) -> None:
-        """Remove temporary files."""
+        """Remove temporary files.
+
+        When using an external ``cache_dir`` (checkpoint mode) the directory
+        is intentionally kept so a future run can resume.  Only random temp
+        directories are deleted.
+        """
         import shutil
 
-        if self.temp_dir.exists():
+        if not self._external_cache and self.temp_dir.exists():
             shutil.rmtree(self.temp_dir)
 
     def __enter__(self):

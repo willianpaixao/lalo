@@ -9,6 +9,7 @@ import pytest
 
 from lalo.exceptions import InvalidChapterSelectionError, InvalidFilePathError
 from lalo.utils import (
+    compute_file_hash,
     detect_language,
     format_duration,
     parse_chapter_selection,
@@ -175,3 +176,72 @@ class TestValidateFileExists:
         with tempfile.TemporaryDirectory() as tmpdir:
             with pytest.raises(InvalidFilePathError, match="Path is not a file"):
                 validate_file_exists(tmpdir)
+
+
+class TestComputeFileHash:
+    """Tests for file hashing utility."""
+
+    def test_hash_deterministic(self):
+        """Same file should always produce the same hash."""
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as f:
+            f.write(b"hello world")
+            temp_path = Path(f.name)
+
+        try:
+            hash1 = compute_file_hash(str(temp_path))
+            hash2 = compute_file_hash(str(temp_path))
+            assert hash1 == hash2
+        finally:
+            temp_path.unlink()
+
+    def test_hash_changes_with_content(self):
+        """Different content should produce different hashes."""
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as f:
+            f.write(b"content A")
+            path_a = Path(f.name)
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as f:
+            f.write(b"content B")
+            path_b = Path(f.name)
+
+        try:
+            hash_a = compute_file_hash(str(path_a))
+            hash_b = compute_file_hash(str(path_b))
+            assert hash_a != hash_b
+        finally:
+            path_a.unlink()
+            path_b.unlink()
+
+    def test_hash_format(self):
+        """Hash should be in 'algorithm:hexdigest' format."""
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as f:
+            f.write(b"test data")
+            temp_path = Path(f.name)
+
+        try:
+            result = compute_file_hash(str(temp_path))
+            assert result.startswith("sha256:")
+            # SHA-256 hex digest is 64 characters
+            hex_part = result.split(":", 1)[1]
+            assert len(hex_part) == 64
+            # Should only contain hex characters
+            int(hex_part, 16)
+        finally:
+            temp_path.unlink()
+
+    def test_hash_accepts_path_object(self):
+        """Should accept Path objects as well as strings."""
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as f:
+            f.write(b"path object test")
+            temp_path = Path(f.name)
+
+        try:
+            result = compute_file_hash(temp_path)
+            assert result.startswith("sha256:")
+        finally:
+            temp_path.unlink()
+
+    def test_hash_nonexistent_file_raises(self):
+        """Should raise FileNotFoundError for missing files."""
+        with pytest.raises(FileNotFoundError, match="Cannot hash file"):
+            compute_file_hash("/nonexistent/file.epub")

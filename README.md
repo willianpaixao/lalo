@@ -11,6 +11,7 @@ Convert EPUB ebooks to high-quality audiobooks using [Qwen3-TTS](https://github.
 - **Voice Control**: Optional natural language instructions for voice modulation
 - **Multiple Export Formats**: Export to WAV (lossless), MP3 (compressed), or M4B (audiobook with chapter markers)
 - **Chapter Markers**: M4B format includes navigable chapter bookmarks
+- **Checkpoint & Resume**: Automatically saves progress after each chapter; interrupted conversions resume where they left off by simply re-running the same command
 
 ## Requirements
 
@@ -132,19 +133,6 @@ lalo convert mybook.epub --speaker Aiden --instruct "Speak slowly and clearly"
 **Streaming mode (for very long books):**
 ```bash
 lalo convert longbook.epub --streaming
-```
-- Writes chapters incrementally to disk
-- Recommended for books with 50+ chapters
-- Crash-resilient - completed chapters are preserved
-
-**Combine multiple options:**
-```bash
-lalo convert mybook.epub \
-  --speaker Vivian \
-  --language Chinese \
-  --chapters 1,3,5-10 \
-  --output ~/audiobooks/mybook.mp3 \
-  --format mp3
 ```
 - Writes chapters incrementally to disk
 - Recommended for books with 50+ chapters
@@ -430,6 +418,74 @@ lalo convert book.epub --chapters 1,5,10       # Chapters 1, 5, and 10
 lalo convert book.epub --chapters 1-5,10-15    # Chapters 1-5 and 10-15
 ```
 
+## Checkpoint & Resume
+
+Lalo automatically saves progress after each chapter so interrupted conversions
+can be resumed by re-running the same command. No extra flags are needed.
+
+### How It Works
+
+1. When a conversion starts, Lalo creates a checkpoint file and caches each
+   completed chapter as a WAV file under `~/.cache/lalo/` (or `$XDG_CACHE_HOME/lalo/`).
+2. If the process is interrupted (Ctrl+C, GPU out-of-memory, crash), the
+   checkpoint persists on disk.
+3. Re-running the same `lalo convert` command auto-detects the checkpoint,
+   validates the EPUB hasn't changed, skips completed chapters, and picks up
+   where it left off.
+4. On successful completion the checkpoint and cached audio are deleted
+   automatically.
+
+### Example
+
+```bash
+# Start a conversion — gets interrupted after 5 of 20 chapters
+lalo convert moby-dick.epub --format m4b
+# ^C
+# ⚠ Interrupt received. Saving progress...
+# Checkpoint saved. Resume with:
+#   lalo convert moby-dick.epub
+
+# Resume — just re-run the same command
+lalo convert moby-dick.epub --format m4b
+# Resuming: 5 chapter(s) already completed, 15 remaining
+# ...
+# ✓ Conversion complete!
+```
+
+### Skipping Resume
+
+To ignore an existing checkpoint and start from scratch:
+
+```bash
+lalo convert mybook.epub --no-resume
+```
+
+### Managing the Cache
+
+List all cached checkpoints:
+
+```bash
+lalo cache list
+```
+
+Remove stale checkpoints (default: older than 30 days):
+
+```bash
+lalo cache clean
+```
+
+Remove checkpoints older than 7 days:
+
+```bash
+lalo cache clean --days 7
+```
+
+Remove all checkpoints:
+
+```bash
+lalo cache clean --all
+```
+
 ## CLI Commands
 
 ### `lalo convert`
@@ -440,14 +496,17 @@ Convert an EPUB file to audiobook.
 Usage: lalo convert [OPTIONS] EPUB_FILE
 
 Options:
-  -s, --speaker TEXT        Speaker voice (default: Aiden)
-  -l, --language TEXT       Language for TTS (default: Auto)
-  -c, --chapters TEXT       Chapters to convert (default: all)
-  -o, --output PATH         Output file path
-  -f, --format [wav|mp3|m4b] Output audio format (default: mp3)
-  -i, --instruct TEXT       Voice control instruction
-  --streaming               Enable streaming mode (incremental saving)
-  --help                    Show this message and exit
+  -s, --speaker TEXT            Speaker voice (default: Aiden)
+  -l, --language TEXT           Language for TTS (default: Auto)
+  -c, --chapters TEXT           Chapters to convert (default: all)
+  -o, --output PATH             Output file path
+  -f, --format [wav|mp3|m4b]    Output audio format (default: mp3)
+  -i, --instruct TEXT           Voice control instruction
+  --streaming                   Enable streaming mode (incremental saving)
+  --parallel / --no-parallel    Enable parallel chapter processing (default: auto-detect GPUs)
+  --max-parallel INTEGER        Maximum parallel chapters (default: auto-detect)
+  --no-resume                   Ignore existing checkpoint and start fresh
+  --help                        Show this message and exit
 ```
 
 ### `lalo inspect`
@@ -492,6 +551,30 @@ Options:
   --help  Show this message and exit
 ```
 
+### `lalo cache list`
+
+List all cached checkpoints with progress, age, and disk usage.
+
+```
+Usage: lalo cache list [OPTIONS]
+
+Options:
+  --help  Show this message and exit
+```
+
+### `lalo cache clean`
+
+Remove stale or all cached checkpoints.
+
+```
+Usage: lalo cache clean [OPTIONS]
+
+Options:
+  --days INTEGER  Remove checkpoints older than N days (default: 30)
+  --all           Remove all checkpoints regardless of age
+  --help          Show this message and exit
+```
+
 ## Merging M4B Files
 
 If you converted a book in parts (e.g., chapters 1-10, 11-20, 21-30), you can merge them into a single M4B file while preserving all chapter markers:
@@ -533,16 +616,21 @@ Default settings can be customized in `lalo/config.py`:
 - `DEFAULT_LANGUAGE`: Default language detection mode (Auto)
 - `DEFAULT_FORMAT`: Default output format (mp3)
 - `MP3_BITRATE`: MP3 bitrate (192k)
+- `CHECKPOINT_ENABLED`: Enable automatic checkpoint/resume (default: True)
+- `CHECKPOINT_CACHE_DIR`: Cache directory override (default: `~/.cache/lalo` or `$XDG_CACHE_HOME/lalo`)
+- `CHECKPOINT_STALE_DAYS`: Days before `lalo cache clean` considers a checkpoint stale (default: 30)
 
 ## How It Works
 
 1. **EPUB Parsing**: Extracts book metadata and chapter content while preserving structure
 2. **Language Detection**: Auto-detects language per chapter using `langdetect`
-3. **Text Processing**: Chunks long chapters into manageable segments (optimized to 2000 chars)
-4. **TTS Generation**: Converts text to speech using Qwen3-TTS-12Hz-1.7B-CustomVoice with GPU batch processing
-5. **Audio Export**:
-   - **Regular mode**: Concatenates all chapters in memory, then exports
-   - **Streaming mode**: Writes each chapter to disk immediately, then combines at end
+3. **Checkpoint Init**: Computes a SHA-256 hash of the EPUB and creates (or resumes from) a checkpoint in `~/.cache/lalo/`
+4. **Text Processing**: Chunks long chapters into manageable segments (optimized to 2000 chars)
+5. **TTS Generation**: Converts text to speech using Qwen3-TTS-12Hz-1.7B-CustomVoice with GPU batch processing; the checkpoint is updated after each chapter
+6. **Audio Export**:
+   - Intermediate chapter WAV files are stored in the cache directory for crash resilience
+   - On completion, chapters are concatenated and exported to the target format (WAV, MP3, or M4B)
+   - The checkpoint and cached audio are cleaned up automatically
 
 ## Contributing
 

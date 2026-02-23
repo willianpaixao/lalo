@@ -125,3 +125,10 @@ PARALLEL_DEVICES: list[str] | None = None  # Auto-detect GPUs (None = auto, or [
 MODEL_VRAM_MB: int = 4000  # Estimated VRAM per model instance in MB
 PARALLEL_SAFETY_FACTOR: float = 0.8  # Use 80% of available VRAM (conservative)
 PARALLEL_MIN_CHAPTERS: int = 2  # Minimum chapters to use parallel processing
+
+# Checkpoint / Resume Settings
+# When enabled, Lalo saves progress after each chapter and auto-resumes on re-run.
+# Use --no-resume to force a fresh start.
+CHECKPOINT_ENABLED: bool = True
+CHECKPOINT_CACHE_DIR: str | None = None  # None = ~/.cache/lalo (or $XDG_CACHE_HOME/lalo)
+CHECKPOINT_STALE_DAYS: int = 30  # 'lalo cache clean' removes checkpoints older than this

@@ -382,3 +382,105 @@ class TestStreamingAudioWriter:
                 writer.finalize()
 
             writer.cleanup()
+
+
+class TestStreamingAudioWriterCacheDir:
+    """Tests for StreamingAudioWriter with external cache_dir (checkpoint mode)."""
+
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.sample_audio = np.random.randn(24000).astype(np.float32)  # 1 second
+
+    def test_uses_provided_cache_dir(self):
+        """Writer should use the provided cache directory."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_dir = Path(tmpdir) / "my_cache"
+            output_path = Path(tmpdir) / "output.mp3"
+
+            writer = StreamingAudioWriter(output_path, format="mp3", cache_dir=str(cache_dir))
+            assert writer.temp_dir == cache_dir
+            assert cache_dir.exists()
+            writer.cleanup()
+
+    def test_does_not_delete_external_cache_on_cleanup(self):
+        """cleanup() should NOT delete external cache dirs."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_dir = Path(tmpdir) / "persistent_cache"
+            output_path = Path(tmpdir) / "output.mp3"
+
+            writer = StreamingAudioWriter(output_path, format="mp3", cache_dir=str(cache_dir))
+            writer.write_chapter(self.sample_audio, "Chapter 1", 1)
+            writer.cleanup()
+
+            # The cache directory should still exist
+            assert cache_dir.exists()
+            # And the chapter file should still be there
+            assert (cache_dir / "chapter_0001.wav").exists()
+
+    def test_deletes_random_temp_dir_on_cleanup(self):
+        """cleanup() should delete random temp dirs (non-cache mode)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "output.mp3"
+
+            writer = StreamingAudioWriter(output_path, format="mp3")
+            temp_dir = writer.temp_dir
+            writer.write_chapter(self.sample_audio, "Chapter 1", 1)
+            writer.cleanup()
+
+            # Random temp dir should be deleted
+            assert not temp_dir.exists()
+
+    def test_load_existing_chapters(self):
+        """load_existing_chapters() should restore chapter state."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_dir = Path(tmpdir) / "cache"
+            cache_dir.mkdir()
+            output_path = Path(tmpdir) / "output.wav"
+
+            # Pre-create some chapter WAV files
+            import soundfile as sf
+
+            for i in range(1, 4):
+                wav_path = cache_dir / f"chapter_{i:04d}.wav"
+                sf.write(str(wav_path), self.sample_audio, 24000)
+
+            writer = StreamingAudioWriter(output_path, format="wav", cache_dir=str(cache_dir))
+            files = [cache_dir / f"chapter_{i:04d}.wav" for i in range(1, 4)]
+            titles = ["Chapter 1", "Chapter 2", "Chapter 3"]
+
+            writer.load_existing_chapters(files, titles)
+
+            assert len(writer.chapter_files) == 3
+            assert len(writer.chapter_titles) == 3
+            assert writer.total_duration > 0
+
+            # Finalize should produce output with all chapters
+            writer.finalize()
+            assert output_path.exists()
+            writer.cleanup()
+
+    def test_load_existing_then_write_new(self):
+        """Should be able to load existing chapters and then write new ones."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_dir = Path(tmpdir) / "cache"
+            cache_dir.mkdir()
+            output_path = Path(tmpdir) / "output.wav"
+
+            import soundfile as sf
+
+            # Pre-create chapter 1
+            wav_path = cache_dir / "chapter_0001.wav"
+            sf.write(str(wav_path), self.sample_audio, 24000)
+
+            writer = StreamingAudioWriter(output_path, format="wav", cache_dir=str(cache_dir))
+            writer.load_existing_chapters([wav_path], ["Chapter 1"])
+
+            # Write chapter 2
+            writer.write_chapter(self.sample_audio, "Chapter 2", 2)
+
+            assert len(writer.chapter_files) == 2
+            assert len(writer.chapter_titles) == 2
+
+            writer.finalize()
+            assert output_path.exists()
+            writer.cleanup()

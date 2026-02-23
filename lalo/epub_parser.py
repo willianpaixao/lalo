@@ -15,6 +15,7 @@ from lalo.exceptions import (
     EPUBNotFoundError,
     EPUBParseError,
 )
+from lalo.text_normalization import normalize_text_for_speech
 from lalo.utils import detect_language
 
 
@@ -98,12 +99,15 @@ def clean_html(html_content: str) -> str:
     return "\n\n".join(text_parts)
 
 
-def extract_chapters(book: epub.EpubBook) -> list[Chapter]:
+def extract_chapters(book: epub.EpubBook, normalize_urls: bool = True) -> list[Chapter]:
     """
     Extract chapters from an EPUB book.
 
     Args:
         book: Parsed EPUB book object
+        normalize_urls: If True, normalize URLs in chapter text for natural speech.
+            Defaults to True. URLs are replaced with "a link" to prevent slow
+            letter-by-letter speech synthesis.
 
     Returns:
         List of Chapter objects with content and metadata
@@ -120,6 +124,10 @@ def extract_chapters(book: epub.EpubBook) -> list[Chapter]:
 
         # Clean HTML and extract text
         text_content = clean_html(html_content)
+
+        # Normalize URLs for natural speech synthesis
+        if normalize_urls:
+            text_content = normalize_text_for_speech(text_content)
 
         # Skip if content is too short (likely not a real chapter)
         if len(text_content.strip()) < 100:
@@ -157,12 +165,14 @@ def extract_chapters(book: epub.EpubBook) -> list[Chapter]:
     return chapters
 
 
-def parse_epub(file_path: str) -> Book:
+def parse_epub(file_path: str, normalize_urls: bool = True) -> Book:
     """
     Parse an EPUB file and extract all content with structure.
 
     Args:
         file_path: Path to the EPUB file
+        normalize_urls: If True, normalize URLs in chapter text for natural speech.
+            Defaults to True. Set to False to preserve original URLs.
 
     Returns:
         Book object with metadata and chapters
@@ -195,8 +205,8 @@ def parse_epub(file_path: str) -> Book:
         language = book.get_metadata("DC", "language")
         language = language[0][0] if language else None
 
-        # Extract chapters
-        chapters = extract_chapters(book)
+        # Extract chapters with URL normalization
+        chapters = extract_chapters(book, normalize_urls=normalize_urls)
 
         if not chapters:
             raise EPUBNoChaptersError(file_path)

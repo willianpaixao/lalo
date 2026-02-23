@@ -15,13 +15,21 @@ from lalo.config import (
     MODEL_NAME,
     SUPPORTED_FORMATS,
 )
+from lalo.text_normalization import (
+    URLReplacementStrategy,
+    normalize_text_for_speech,
+    normalize_urls,
+)
 
 __all__ = [
     "DEFAULT_LANGUAGE",
     "DEFAULT_SPEAKER",
     "MODEL_NAME",
     "SUPPORTED_FORMATS",
+    "URLReplacementStrategy",
     "__author__",
     "__email__",
     "__version__",
+    "normalize_text_for_speech",
+    "normalize_urls",
 ]

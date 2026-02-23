@@ -6,7 +6,9 @@ import logging
 import os
 import signal
 import threading
+import time
 import warnings
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
@@ -35,10 +37,14 @@ from rich.table import Table
 
 from lalo import __version__
 from lalo.audio_manager import AudioManager, StreamingAudioWriter
+from lalo.checkpoint import CheckpointManager
 from lalo.config import (
+    CHECKPOINT_ENABLED,
+    CHECKPOINT_STALE_DAYS,
     DEFAULT_FORMAT,
     DEFAULT_LANGUAGE,
     DEFAULT_SPEAKER,
+    MODEL_NAME,
     SPEAKER_INFO,
     SUPPORTED_FORMATS,
     SUPPORTED_SPEAKERS,
@@ -46,6 +52,8 @@ from lalo.config import (
 from lalo.epub_parser import parse_epub
 from lalo.exceptions import (
     AudioError,
+    CheckpointCorruptedError,
+    CheckpointMismatchError,
     EPUBError,
     GPUNotAvailableError,
     InvalidChapterSelectionError,
@@ -55,6 +63,7 @@ from lalo.exceptions import (
 )
 from lalo.tts_engine import TTSEngine
 from lalo.utils import (
+    compute_file_hash,
     format_duration,
     parse_chapter_selection,
 )
@@ -129,6 +138,12 @@ def main():
     default=None,
     help="Maximum parallel chapters (default: auto-detect based on available GPUs)",
 )
+@click.option(
+    "--no-resume",
+    is_flag=True,
+    default=False,
+    help="Ignore any existing checkpoint and start a fresh conversion",
+)
 def convert(  # pyright: ignore[reportGeneralTypeIssues]
     epub_file: str,
     speaker: str,
@@ -140,6 +155,7 @@ def convert(  # pyright: ignore[reportGeneralTypeIssues]
     streaming: bool,
     parallel: bool,
     max_parallel: int | None,
+    no_resume: bool,
 ):
     """
     Convert an EPUB file to audiobook.
@@ -211,9 +227,131 @@ def convert(  # pyright: ignore[reportGeneralTypeIssues]
 
         output_path = Path(output)
 
+        # Checkpoint / Resume
+        checkpoint_mgr = CheckpointManager(epub_file, output_path)
+        checkpoint_data = None
+        resumed = False
+        epub_hash = compute_file_hash(epub_file)
+
+        sr = 24000  # Default sample rate for Qwen3-TTS
+
+        if CHECKPOINT_ENABLED and not no_resume:
+            try:
+                checkpoint_data = checkpoint_mgr.load(epub_hash)
+            except CheckpointCorruptedError as e:
+                console.print(f"[yellow]Warning:[/yellow] {e}")
+                console.print("[yellow]Starting fresh conversion[/yellow]")
+                checkpoint_data = None
+
+            if checkpoint_data is not None:
+                try:
+                    checkpoint_mgr.validate(
+                        checkpoint_data,
+                        epub_hash=epub_hash,
+                        speaker=speaker,
+                        language=language,
+                        instruct=instruct,
+                        format=format,
+                    )
+                except CheckpointMismatchError as e:
+                    console.print(f"[yellow]Warning:[/yellow] {e}")
+                    console.print("[yellow]Starting fresh conversion[/yellow]")
+                    checkpoint_mgr.cleanup(epub_hash)
+                    checkpoint_data = None
+
+            if checkpoint_data is not None:
+                # Verify cached audio files are intact
+                valid_files = checkpoint_mgr.verify_audio_files(checkpoint_data)
+                remaining = checkpoint_mgr.get_remaining_chapters(checkpoint_data)
+
+                if not remaining:
+                    console.print("[green]✓[/green] All chapters already completed from checkpoint")
+                    console.print("[cyan]Skipping to finalization...[/cyan]")
+                else:
+                    console.print(
+                        f"[cyan]Resuming:[/cyan] {len(checkpoint_data.completed_chapters)} "
+                        f"chapter(s) already completed, {len(remaining)} remaining"
+                    )
+
+                # Filter to only remaining chapters
+                remaining_set = set(remaining)
+                selected_indices = [
+                    i for i in selected_indices if book.chapters[i].number in remaining_set
+                ]
+                selected_chapters = [book.chapters[i] for i in selected_indices]
+                resumed = True
+
+        # Create fresh checkpoint if none exists
+        if CHECKPOINT_ENABLED and checkpoint_data is None:
+            checkpoint_data = checkpoint_mgr.create_checkpoint(
+                epub_hash=epub_hash,
+                format=format,
+                speaker=speaker,
+                language=language,
+                instruct=instruct,
+                streaming=streaming,
+                parallel=parallel,
+                selected_chapters=[
+                    book.chapters[i].number
+                    for i in parse_chapter_selection(chapters, len(book.chapters))
+                ],
+                model_name=MODEL_NAME,
+                sample_rate=sr,
+            )
+
+        # When checkpoint is active, force streaming mode so intermediate
+        # WAV files are written to the persistent cache directory.
+        audio_cache_dir: str | None = None
+        if CHECKPOINT_ENABLED and checkpoint_data is not None:
+            audio_cache_dir = checkpoint_data.chapter_audio_dir
+            if not streaming:
+                streaming = True  # Force streaming for checkpoint durability
+
+        # Skip TTS if all chapters are already done (resumed + nothing remaining)
+        if resumed and not selected_chapters:
+            # All chapters were already completed — jump straight to finalization
+            tts_engine: TTSEngine | None = None
+            audio_manager = AudioManager()
+            conversion_start = time.monotonic()
+
+            resume_writer = StreamingAudioWriter(
+                output_path=str(output_path),
+                format=format,
+                sample_rate=sr,
+                cache_dir=audio_cache_dir,
+            )
+            # Reload completed chapter audio
+            valid_files = checkpoint_mgr.verify_audio_files(checkpoint_data)  # type: ignore[arg-type]
+            resume_writer.load_existing_chapters(
+                valid_files,
+                checkpoint_data.completed_titles,  # type: ignore[union-attr]
+            )
+            chapters_completed = len(valid_files)
+
+            # Jump to finalization (handled by the existing streaming finalize block)
+            console.print(f"\n[cyan]Finalizing {format.upper()} export...[/cyan]")
+            book_metadata = {"title": book.title, "author": book.author}
+            output_file = resume_writer.finalize(book_metadata)
+            duration = resume_writer.total_duration
+            resume_writer.cleanup()
+
+            # Clean up checkpoint on success
+            checkpoint_mgr.cleanup(epub_hash)
+
+            total_chars = sum(len(ch.content) for ch in book.chapters)
+            total_words = sum(len(ch.content.split()) for ch in book.chapters)
+
+            console.print("\n[green]✓ Conversion complete![/green]")
+            console.print(f"[cyan]Output:[/cyan] {output_file}")
+            console.print(f"[cyan]Duration:[/cyan] {format_duration(duration)}")
+            console.print(f"[cyan]Chapters:[/cyan] {chapters_completed}")
+            console.print(f"[cyan]Input:[/cyan] {total_words:,} words, {total_chars:,} characters")
+            elapsed = time.monotonic() - conversion_start
+            console.print(f"[cyan]Elapsed:[/cyan] {format_duration(elapsed)}")
+            return
+
         # Initialize TTS engine (may be unloaded later for parallel processing)
         console.print("\n[cyan]Initializing TTS Engine...[/cyan]")
-        tts_engine: TTSEngine | None
         try:
             tts_engine = TTSEngine()
             console.print("[green]✓[/green] TTS Engine loaded successfully")
@@ -233,6 +371,9 @@ def convert(  # pyright: ignore[reportGeneralTypeIssues]
         # Initialize audio manager
         audio_manager = AudioManager()
 
+        # Start timing the conversion
+        conversion_start = time.monotonic()
+
         # Process chapters with progress bar
         if streaming:
             console.print("\n[cyan]Converting chapters to audio in streaming mode...[/cyan]")
@@ -240,19 +381,30 @@ def convert(  # pyright: ignore[reportGeneralTypeIssues]
             console.print("\n[cyan]Converting chapters to audio...[/cyan]")
 
         audio_segments = []
-        sr = 24000  # Default sample rate for Qwen3-TTS
 
         # Initialize streaming writer if in streaming mode
-        streaming_writer = None
+        streaming_writer: StreamingAudioWriter | None = None
         if streaming:
             streaming_writer = StreamingAudioWriter(
                 output_path=str(output_path),
                 format=format,
                 sample_rate=sr,
+                cache_dir=audio_cache_dir,
             )
+            # If resuming, reload completed chapters into the writer
+            if resumed and checkpoint_data is not None:
+                valid_files = checkpoint_mgr.verify_audio_files(checkpoint_data)
+                streaming_writer.load_existing_chapters(
+                    valid_files,
+                    checkpoint_data.completed_titles,
+                )
 
         # Track progress for graceful shutdown
-        chapters_completed = 0
+        chapters_completed = (
+            len(checkpoint_data.completed_chapters)
+            if resumed and checkpoint_data is not None
+            else 0
+        )
 
         # Try parallel processing if enabled
         use_parallel = parallel and len(selected_chapters) >= 2
@@ -389,6 +541,13 @@ def convert(  # pyright: ignore[reportGeneralTypeIssues]
 
                             # Mark chapter as complete
                             chapters_completed += 1
+                            if checkpoint_data is not None:
+                                chapter_title_ckpt = f"Chapter {chapter.number}: {chapter.title}"
+                                checkpoint_mgr.mark_chapter_completed(
+                                    checkpoint_data,
+                                    chapter.number,
+                                    chapter_title_ckpt,
+                                )
 
                             # Mark progress task as complete
                             if idx in chapter_tasks:
@@ -430,6 +589,13 @@ def convert(  # pyright: ignore[reportGeneralTypeIssues]
                             else:
                                 audio_segments.append(audio)
                             chapters_completed += 1
+                            if checkpoint_data is not None:
+                                chapter_title_ckpt = f"Chapter {chapter.number}: {chapter.title}"
+                                checkpoint_mgr.mark_chapter_completed(
+                                    checkpoint_data,
+                                    chapter.number,
+                                    chapter_title_ckpt,
+                                )
 
                         # Trigger save by setting interrupted flag and record OOM as the reason
                         interrupted["flag"] = True
@@ -505,6 +671,13 @@ def convert(  # pyright: ignore[reportGeneralTypeIssues]
 
                         # Mark chapter as complete
                         chapters_completed += 1
+                        if checkpoint_data is not None:
+                            chapter_title_ckpt = f"Chapter {chapter.number}: {chapter.title}"
+                            checkpoint_mgr.mark_chapter_completed(
+                                checkpoint_data,
+                                chapter.number,
+                                chapter_title_ckpt,
+                            )
 
                     except UnsupportedSpeakerError as e:
                         console.print(f"\n[red]Speaker Error:[/red] {e}")
@@ -660,8 +833,12 @@ def convert(  # pyright: ignore[reportGeneralTypeIssues]
             )
             console.print(f"[cyan]Duration:[/cyan] {format_duration(duration)}")
 
-            # Show resume command if there are remaining chapters
-            if resume_chapters:
+            # Show checkpoint-based resume hint
+            if CHECKPOINT_ENABLED and checkpoint_data is not None:
+                console.print("\n[cyan]Checkpoint saved.[/cyan] Resume with:")
+                console.print(f"  lalo convert {epub_file}")
+            elif resume_chapters:
+                # Fallback to manual resume hint if checkpoint is disabled
                 console.print(
                     f"\n[cyan]ℹ To resume:[/cyan] lalo convert {epub_file} --chapters {resume_chapters} --output {Path(output_file).stem}_continued.{format}"
                 )
@@ -669,6 +846,11 @@ def convert(  # pyright: ignore[reportGeneralTypeIssues]
             raise click.Abort()
 
         console.print("[green]✓[/green] All chapters processed successfully")
+
+        # Clean up checkpoint on success (before finalization so we don't
+        # leave stale checkpoints if finalization succeeds)
+        if CHECKPOINT_ENABLED and checkpoint_data is not None:
+            checkpoint_mgr.cleanup(epub_hash)
 
         # Handle streaming mode finalization
         if streaming_writer:
@@ -742,6 +924,8 @@ def convert(  # pyright: ignore[reportGeneralTypeIssues]
         console.print(f"[cyan]Duration:[/cyan] {format_duration(duration)}")
         console.print(f"[cyan]Chapters:[/cyan] {len(selected_chapters)}")
         console.print(f"[cyan]Input:[/cyan] {total_words:,} words, {total_chars:,} characters")
+        elapsed = time.monotonic() - conversion_start
+        console.print(f"[cyan]Elapsed:[/cyan] {format_duration(elapsed)}")
 
     except click.Abort:
         raise
@@ -879,6 +1063,191 @@ def inspect(epub_file: str):
             "[yellow]This is a bug![/yellow] Please report it at https://github.com/willianpaixao/lalo/issues"
         )
         raise click.Abort() from e
+
+
+@main.group()
+def cache():
+    """Manage the checkpoint cache."""
+
+
+@cache.command("list")
+def cache_list():
+    """
+    List all cached checkpoints.
+
+    Shows checkpoint details including EPUB name, progress, age,
+    and disk usage.
+
+    Examples:
+
+        lalo cache list
+    """
+    import json as _json
+    from datetime import datetime as _dt
+
+    cache_base = CheckpointManager._resolve_cache_dir(None)
+
+    if not cache_base.exists():
+        console.print("[yellow]No checkpoint cache found.[/yellow]")
+        return
+
+    checkpoints_found = 0
+    total_size = 0
+
+    table = Table(title="Cached Checkpoints")
+    table.add_column("EPUB", style="cyan", no_wrap=True, max_width=40)
+    table.add_column("Progress", style="white")
+    table.add_column("Format", style="yellow")
+    table.add_column("Age", style="white")
+    table.add_column("Size", style="white")
+
+    for entry in sorted(cache_base.iterdir()):
+        if not entry.is_dir():
+            continue
+        ckpt_file = entry / "checkpoint.json"
+        if not ckpt_file.exists():
+            continue
+
+        try:
+            raw = _json.loads(ckpt_file.read_text())
+        except (OSError, _json.JSONDecodeError):
+            continue
+
+        epub_name = Path(raw.get("epub_file", "unknown")).name
+        completed = len(raw.get("completed_chapters", []))
+        total = raw.get("total_chapters", "?")
+        fmt = raw.get("format", "?")
+        updated = raw.get("updated_at", "")
+
+        # Calculate age
+        try:
+            updated_dt = _dt.fromisoformat(updated)
+            age_delta = _dt.now(UTC) - updated_dt
+            if age_delta.days > 0:
+                age_str = f"{age_delta.days}d ago"
+            else:
+                hours = age_delta.seconds // 3600
+                age_str = f"{hours}h ago" if hours > 0 else "<1h ago"
+        except (ValueError, TypeError):
+            age_str = "unknown"
+
+        # Calculate directory size
+        dir_size = sum(f.stat().st_size for f in entry.rglob("*") if f.is_file())
+        total_size += dir_size
+        if dir_size >= 1024 * 1024 * 1024:
+            size_str = f"{dir_size / (1024 * 1024 * 1024):.1f} GB"
+        elif dir_size >= 1024 * 1024:
+            size_str = f"{dir_size / (1024 * 1024):.1f} MB"
+        else:
+            size_str = f"{dir_size / 1024:.0f} KB"
+
+        table.add_row(epub_name, f"{completed}/{total}", fmt, age_str, size_str)
+        checkpoints_found += 1
+
+    if checkpoints_found == 0:
+        console.print("[yellow]No checkpoints found.[/yellow]")
+        return
+
+    console.print(table)
+
+    # Total size summary
+    if total_size >= 1024 * 1024 * 1024:
+        total_str = f"{total_size / (1024 * 1024 * 1024):.1f} GB"
+    elif total_size >= 1024 * 1024:
+        total_str = f"{total_size / (1024 * 1024):.1f} MB"
+    else:
+        total_str = f"{total_size / 1024:.0f} KB"
+    console.print(f"\n[cyan]Total cache size:[/cyan] {total_str}")
+    console.print(f"[cyan]Cache location:[/cyan] {cache_base}")
+
+
+@cache.command("clean")
+@click.option(
+    "--days",
+    type=int,
+    default=CHECKPOINT_STALE_DAYS,
+    help=f"Remove checkpoints older than N days (default: {CHECKPOINT_STALE_DAYS})",
+)
+@click.option(
+    "--all",
+    "clean_all",
+    is_flag=True,
+    default=False,
+    help="Remove all checkpoints regardless of age",
+)
+def cache_clean(days: int, clean_all: bool):
+    """
+    Remove stale or all cached checkpoints.
+
+    Examples:
+
+        lalo cache clean              # Remove checkpoints older than 30 days
+
+        lalo cache clean --days 7     # Remove checkpoints older than 7 days
+
+        lalo cache clean --all        # Remove all checkpoints
+    """
+    import json as _json
+    import shutil
+    from datetime import datetime as _dt, timedelta
+
+    cache_base = CheckpointManager._resolve_cache_dir(None)
+
+    if not cache_base.exists():
+        console.print("[yellow]No checkpoint cache found.[/yellow]")
+        return
+
+    cutoff = _dt.now(UTC) - timedelta(days=days)
+    removed = 0
+    freed_bytes = 0
+
+    for entry in sorted(cache_base.iterdir()):
+        if not entry.is_dir():
+            continue
+        ckpt_file = entry / "checkpoint.json"
+        if not ckpt_file.exists():
+            continue
+
+        should_remove = clean_all
+
+        if not should_remove:
+            try:
+                raw = _json.loads(ckpt_file.read_text())
+                updated = raw.get("updated_at", "")
+                updated_dt = _dt.fromisoformat(updated)
+                if updated_dt < cutoff:
+                    should_remove = True
+            except (OSError, _json.JSONDecodeError, ValueError, TypeError):
+                # Cannot parse — consider it stale
+                should_remove = True
+
+        if should_remove:
+            dir_size = sum(f.stat().st_size for f in entry.rglob("*") if f.is_file())
+            freed_bytes += dir_size
+            epub_name = "unknown"
+            try:
+                raw = _json.loads(ckpt_file.read_text())
+                epub_name = Path(raw.get("epub_file", "unknown")).name
+            except Exception:
+                pass
+
+            shutil.rmtree(entry)
+            console.print(f"[red]Removed:[/red] {epub_name} ({entry.name})")
+            removed += 1
+
+    if removed == 0:
+        if clean_all:
+            console.print("[yellow]No checkpoints to remove.[/yellow]")
+        else:
+            console.print(f"[yellow]No checkpoints older than {days} days.[/yellow]")
+    else:
+        if freed_bytes >= 1024 * 1024 * 1024:
+            freed_str = f"{freed_bytes / (1024 * 1024 * 1024):.1f} GB"
+        elif freed_bytes >= 1024 * 1024:
+            freed_str = f"{freed_bytes / (1024 * 1024):.1f} MB"
+        else:
+            freed_str = f"{freed_bytes / 1024:.0f} KB"
+        console.print(f"\n[green]✓[/green] Removed {removed} checkpoint(s), freed {freed_str}")
 
 
 if __name__ == "__main__":
