@@ -38,6 +38,33 @@ QWEN_SUPPORTED_LANGUAGES = [
     "Italian",
 ]
 
+# Language codes for num2words number-to-words conversion.
+# Chinese is not supported by num2words; falls back to English.
+NUM2WORDS_LANGUAGE_MAP: dict[str, str] = {
+    "Chinese": "en",
+    "English": "en",
+    "Japanese": "ja",
+    "Korean": "ko",
+    "German": "de",
+    "French": "fr",
+    "Russian": "ru",
+    "Portuguese": "pt",
+    "Spanish": "es",
+    "Italian": "it",
+}
+
+# Currency symbol to (num2words currency code, spoken plural name).
+# Used by text normalization to expand "$42" → "forty-two dollars".
+CURRENCY_MAP: dict[str, tuple[str, str]] = {
+    "$": ("USD", "dollars"),
+    "€": ("EUR", "euros"),
+    "£": ("GBP", "pounds"),
+    "¥": ("JPY", "yen"),
+    "₩": ("KRW", "won"),
+    "₽": ("RUB", "rubles"),
+    "R$": ("BRL", "reais"),
+}
+
 # Language Detection to Qwen3 Language Mapping
 LANGUAGE_MAP: dict[str, str] = {
     "zh-cn": "Chinese",

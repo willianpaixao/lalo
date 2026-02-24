@@ -42,6 +42,7 @@ dependencies = [
     "langdetect>=1.0.9",
     "torch>=2.0.0,<3.0.0",
     "mutagen>=1.47.0",
+    "num2words>=0.5.14",
 ]
 
 [project.optional-dependencies]

@@ -125,13 +125,17 @@ def extract_chapters(book: epub.EpubBook, normalize_urls: bool = True) -> list[C
         # Clean HTML and extract text
         text_content = clean_html(html_content)
 
-        # Normalize URLs for natural speech synthesis
-        if normalize_urls:
-            text_content = normalize_text_for_speech(text_content)
-
         # Skip if content is too short (likely not a real chapter)
         if len(text_content.strip()) < 100:
             continue
+
+        # Auto-detect language *before* normalization so the raw text
+        # is used for detection (normalization may inject English words).
+        language = detect_language(text_content[:1000])  # Use first 1000 chars
+
+        # Normalize text for natural speech synthesis
+        if normalize_urls:
+            text_content = normalize_text_for_speech(text_content, language=language)
 
         # Try to get chapter title from the item
         title = item.get_name()
@@ -153,9 +157,6 @@ def extract_chapters(book: epub.EpubBook, normalize_urls: bool = True) -> list[C
                 title = title[:100] + "..."
         else:
             title = f"Chapter {chapter_num}"
-
-        # Auto-detect language for this chapter
-        language = detect_language(text_content[:1000])  # Use first 1000 chars
 
         chapter = Chapter(number=chapter_num, title=title, content=text_content, language=language)
 
