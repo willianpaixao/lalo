@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import re
 from enum import Enum
-from typing import Callable, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 import num2words
 
@@ -130,7 +130,7 @@ STANDALONE_YEAR_PATTERN = re.compile(
 def _num2words_safe(
     value: int | float,
     lang: str = "en",
-    **kwargs: str,
+    **kwargs: Any,
 ) -> str:
     """Call num2words with a fallback to English on unsupported languages."""
     try:
